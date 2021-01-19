@@ -97,26 +97,26 @@
 
         - name: Create the needed directories
           file:
-            path: "/mnt/{{ item }}"
+            path: "/mnt{{ item }}"
             state: directory
             recurse: yes
           with_items:
-            - "boot"
-            - "home"
-            - ".snapshots"
-            - "var/log"
+            - "/boot"
+            - "/home"
+            - "/.snapshots"
+            - "/var/log"
 
         - name: Mount remaining subvolumes
-          command: "mount -o noatime,compress=lzo,space_cache=v2,subvol={{ item.subvol }} /dev/{{ root }} /mnt/{{ item.path }}"
+          command: "mount -o noatime,compress=lzo,space_cache=v2,subvol={{ item.subvol }} /dev/{{ root }} /mnt{{ item.path }}"
           with_items:
-            - { subvol: "@home", path: "home" }
-            - { subvol: "@snapshots", path: ".snapshots" }
-            - { subvol: "@var_log", path: "var/log" }
+            - { subvol: "@home", path: "/home" }
+            - { subvol: "@snapshots", path: "/.snapshots" }
+            - { subvol: "@var_log", path: "/var/log" }
 
         - name: Mount boot partition
           command: "mount /dev/{{ boot }} /mnt/boot"
 
-    - name: Bootstrap Arch Linux
+    - name: Pacstrap Arch Linux
       command: "pacstrap /mnt base linux linux-firmware vim intel-ucode"
 
     - name: Print fstab info
@@ -147,7 +147,7 @@
         state: present
         create: yes
 
-    - name: Save keyboard layout the vconsole.conf
+    - name: Save keyboard layout in the vconsole.conf
       lineinfile:
         path: /mnt/etc/vconsole.conf
         regexp: "^KEYMAP={{ keymap }}"
@@ -191,13 +191,13 @@
           (.*)new password(.*): "{{ root_password }}"
 
     - name: "Install packages in chroot"
-      command: "arch-chroot /mnt pacman -S grub efibootmgr networkmanager network-manager-applet dialog wpa_supplicant mtools dosfstools git reflector snapper bluez bluez-utils cups hplip xdg-utils xdg-user-dirs alsa-utils pulseaudio pusleaudio-bluetooth inetutils base-devel linux-headers acpi tlp os-prober ntfs-3g bash-completion"
+      command: "arch-chroot /mnt pacman -Sy --noconfirm grub efibootmgr networkmanager network-manager-applet dialog wpa_supplicant mtools dosfstools git reflector snapper bluez bluez-utils cups hplip xdg-utils xdg-user-dirs alsa-utils pulseaudio pulseaudio-bluetooth inetutils base-devel linux-headers acpi tlp os-prober ntfs-3g bash-completion"
 
     # config out of chroot
     - name: Add btrfs to mkinitcpio modules
       lineinfile:
         path: /mnt/etc/mkinitcpio.conf
-        regexp: "^MODULES=(^"
+        regexp: "^MODULES=^"
         line: "MODULES=(btrfs)"
         state: present
         create: yes
