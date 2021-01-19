@@ -29,8 +29,8 @@
     - name: Synchronize clock via NTP
       command: timedatectl set-ntp true
 
-    - name: Generate a mirrorlist, will take 5 minutes
-      command: reflector -s 'United States' -a 6 --sort rate --save /etc/pacman.d/mirrorlist
+    - name: Generate a mirrorlist, will take 5-15 minutes
+      command: reflector -c 'United States' -a 6 --sort rate --save /etc/pacman.d/mirrorlist
 
     - name: Update pacman cache
       community.general.pacman:
@@ -51,34 +51,35 @@
     - block:
         - name: Create FAT32 filesystem in boot partition
           community.general.filesystem:
-            dev: "{{ boot }}"
+            dev: "/dev/{{ boot }}"
             fstype: vfat
             opts: -F32
             force: no
           when: (format_boot | bool) or (auto_partition | bool)
+          ignore_errors: yes
 
         - name: Create swap filesystem in swap partition
           community.general.filesystem:
-            dev: "{{ swap }}"
+            dev: "/dev/{{ swap }}"
             fstype: swap
             force: yes
+          ignore_errors: yes
 
         - name: Create btrfs filesystem in root partition
           community.general.filesystem:
-            dev: "{{ root }}"
+            dev: "/dev/{{ root }}"
             fstype: btrfs
             force: yes
+          ignore_errors: yes
 
     - block:
         - name: Mount swap
           command: "swapon /dev/{{ swap }}"
+          ignore_errors: yes
 
         - name: Mount root partition to /mnt
-          ansible.posix.mount:
-            path: /mnt
-            src: "/dev/{{ root }}"
-            fstype: btrfs
-            state: present
+          command: "mount /dev/{{ root }} /mnt"
+          ignore_errors: yes
 
         - name: Create root btrfs subvolume
           command: "btrfs su cr /mnt/{{ item }}"
@@ -89,17 +90,10 @@
             - "@var_log"
 
         - name: Unmount /mnt
-          ansible.posix.mount:
-            path: /mnt
-            state: unmounted
+          command: "umount /mnt"
 
         - name: Mount root subvolume to /mnt
-          ansible.posix.mount:
-            path: /mnt
-            src: "/dev/{{ root }}"
-            fstype: btrfs
-            opts: noatime,compress=izo,space_cache=v2,subvol=@
-            state: present
+          command: "mount -o noatime,compress=lzo,space_cache=v2,subvol=@ /dev/{{ root }} /mnt"
 
         - name: Create the needed directories
           file:
@@ -113,23 +107,14 @@
             - "var/log"
 
         - name: Mount remaining subvolumes
-          ansible.posix.mount:
-            path: "/mnt/{{ item.path }}"
-            src: "/dev/{{ root }}"
-            fstype: btrfs
-            opts: "noatime,compress=lzo,space_cache=v2,subvol={{ item.subvol }}"
-            state: present
+          command: "mount -o noatime,compress=lzo,space_cache=v2,subvol={{ item.subvol }} /dev/{{ root }} /mnt/{{ item.path }}"
           with_items:
             - { subvol: "@home", path: "home" }
             - { subvol: "@snapshots", path: ".snapshots" }
             - { subvol: "@var_log", path: "var/log" }
 
         - name: Mount boot partition
-          ansible.posix.mount:
-            path: "/mnt/boot"
-            src: "/dev/{{ boot }}"
-            fstype: vfat
-            state: present
+          command: "mount /dev/{{ boot }} /mnt/boot"
 
     - name: Bootstrap Arch Linux
       command: "pacstrap /mnt base linux linux-firmware vim intel-ucode"
@@ -203,9 +188,9 @@
         command: "arch-chroot /mnt passwd"
         responses:
           (.*)password(.*): "{{ root_password }}"
-          (.*)password(.*): "{{ root_password }}"
+          (.*)new password(.*): "{{ root_password }}"
 
-    - name: "Install packaged in chroot"
+    - name: "Install packages in chroot"
       command: "arch-chroot /mnt pacman -S grub efibootmgr networkmanager network-manager-applet dialog wpa_supplicant mtools dosfstools git reflector snapper bluez bluez-utils cups hplip xdg-utils xdg-user-dirs alsa-utils pulseaudio pusleaudio-bluetooth inetutils base-devel linux-headers acpi tlp os-prober ntfs-3g bash-completion"
 
     # config out of chroot
@@ -221,12 +206,12 @@
     - name: Regenerate the image
       command: "arch-chroot /mnt mkinitcpio -p linux"
 
-    - block: 
+    - block:
         - name: Create windows partition mount point
           file:
             path: "/mnt/mnt/windows"
             state: directory
-        
+
         - name: Mount the windows partition
           command: "arch-chroot /mnt mount /dev/{{ windows }} /mnt/windows"
 
@@ -238,8 +223,8 @@
     - name: Create grub.cfg file
       command: "arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg"
 
-    - block: 
-        - name: UnmountMount the windows partition
+    - block:
+        - name: Unmount the windows partition
           command: "arch-chroot /mnt umount /dev/{{ windows }}"
 
         - name: Delete windows partition mount point
@@ -252,10 +237,7 @@
     - name: Enable services
       command: "arch-chroot /mnt systemctl enable {{ item }}"
       with_items:
-       - NetworkManager
-       - bluetooth
-       - cups
-       - tlp.service
-
-
-    
+        - NetworkManager
+        - bluetooth
+        - cups
+        - tlp.service
